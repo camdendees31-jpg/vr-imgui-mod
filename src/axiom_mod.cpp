@@ -172,17 +172,45 @@ void axiom_shutdown()    { AxiomLog("Axiom shutdown"); }
 #ifdef __ANDROID__
 #include <jni.h>
 #include <android/log.h>
+#include <pthread.h>
+#include <unistd.h>
 
-// Declared in egl_hook.cpp
-extern "C" bool install_egl_hook();
+// Renderer hooks (defined in egl_hook.cpp / vk_hook.cpp / xr_hook.cpp)
+extern "C" bool install_egl_hook();   // OpenGL ES games  -> renders menu
+extern "C" bool install_vk_hook();    // Vulkan games     -> renders menu
+extern "C" bool install_xr_hook();    // OpenXR (in-headset) -> detects path
+
+#define AVLOG(...) __android_log_print(ANDROID_LOG_INFO, "AxiomVR", __VA_ARGS__)
+
+// Engine graphics libs load lazily (often AFTER our .so), and the game
+// may use GLES *or* Vulkan — we don't know which up front. So we retry
+// every renderer hook for ~24s and let whichever one the game actually
+// uses take effect. Each install is idempotent.
+static void* axiom_hook_worker(void*) {
+    bool egl_ok = false, vk_ok = false, xr_ok = false;
+    for (int i = 0; i < 60; ++i) {
+        if (!egl_ok) egl_ok = install_egl_hook();
+        if (!vk_ok)  vk_ok  = install_vk_hook();
+        if (!xr_ok)  xr_ok  = install_xr_hook();
+        if (i == 0 || i == 10 || i == 30)
+            AVLOG("hook status pass %d: EGL=%d VK=%d XR=%d", i, egl_ok, vk_ok, xr_ok);
+        usleep(400 * 1000);
+    }
+    AVLOG("hook worker finished  (EGL=%d VK=%d XR=%d). "
+          "If all 0, the game uses an unsupported present path.", egl_ok, vk_ok, xr_ok);
+    return nullptr;
+}
 
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* /*vm*/, void* /*reserved*/) {
-    __android_log_print(ANDROID_LOG_INFO, "AxiomVR",
-                        "libaxiom_vr_mod.so loaded – installing hooks");
+    AVLOG("libaxiom_vr_mod.so loaded – installing GLES + Vulkan + OpenXR hooks");
     axiom_init();
-    bool ok = install_egl_hook();
-    __android_log_print(ANDROID_LOG_INFO, "AxiomVR",
-                        "EGL hook %s", ok ? "OK – menu will render" : "FAILED");
+
+    pthread_t th;
+    if (pthread_create(&th, nullptr, axiom_hook_worker, nullptr) == 0)
+        pthread_detach(th);
+    else
+        AVLOG("pthread_create failed – running single-pass install");
+
     return JNI_VERSION_1_6;
 }
 

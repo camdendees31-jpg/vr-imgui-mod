@@ -33,10 +33,19 @@ target_include_directories(axiom_vr_mod PUBLIC
     ${IMGUI_DIR}/backends
 )
 
-# GLES3 backend for ImGui (used by egl_hook.cpp)
+# GLES3 backend (used by egl_hook.cpp on Android, and desktop preview).
 target_sources(axiom_vr_mod PRIVATE
     ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
 )
+
+# Vulkan + OpenXR paths only make sense (and only have headers) on Android.
+if(ANDROID)
+    target_sources(axiom_vr_mod PRIVATE
+        src/vk_hook.cpp
+        src/xr_hook.cpp
+        ${IMGUI_DIR}/backends/imgui_impl_vulkan.cpp
+    )
+endif()
 
 target_compile_definitions(axiom_vr_mod PRIVATE
     IMGUI_IMPL_OPENGL_ES3
@@ -48,15 +57,17 @@ target_compile_options(axiom_vr_mod PRIVATE -Wall -Wextra -O2 -fvisibility=hidde
 # Android / Quest
 if(ANDROID)
     target_compile_options(axiom_vr_mod PRIVATE -march=armv8-a)
-    find_library(log-lib    log)
+    find_library(log-lib     log)
     find_library(android-lib android)
-    find_library(egl-lib    EGL)
-    find_library(gles3-lib  GLESv3)
+    find_library(egl-lib     EGL)
+    find_library(gles3-lib   GLESv3)
+    find_library(vulkan-lib  vulkan)
     target_link_libraries(axiom_vr_mod
         ${log-lib}
         ${android-lib}
         ${egl-lib}
         ${gles3-lib}
+        ${vulkan-lib}
     )
 endif()
 

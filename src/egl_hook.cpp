@@ -99,38 +99,16 @@ static EGLBoolean hooked_eglSwapBuffers(EGLDisplay dpy, EGLSurface surface) {
     return g_real_swap(dpy, surface);
 }
 
-// ---- retry worker ---------------------------------------------
-// Engine libs (libunity / libil2cpp / libmain) often load AFTER our
-// library, so a single patch at JNI_OnLoad misses them. We re-scan
-// every 400ms for ~24s and keep patching newly-loaded libraries.
-static void* hook_worker(void*) {
-    for (int i = 0; i < 60; ++i) {
-        bool ok = axiom_hook_unity("eglSwapBuffers",
-                                   (void*)hooked_eglSwapBuffers,
-                                   (void**)&g_real_swap);
-        if (ok) ELOGI("eglSwapBuffers patched (pass %d) real=%p",
-                      i, (void*)g_real_swap);
-        usleep(400 * 1000);
-    }
-    ELOGI("hook worker finished");
-    return nullptr;
-}
-
 // ---- public: install the hook ---------------------------------
+// Called repeatedly by the unified retry thread in axiom_mod.cpp so
+// that late-loaded engine libs (libunity/libil2cpp/libmain) are also
+// patched. Safe to call many times (patch_slot skips already-ours).
 extern "C" bool install_egl_hook() {
-    // Grab the real swap + do a first pass immediately.
     bool ok = axiom_hook_unity("eglSwapBuffers",
                                (void*)hooked_eglSwapBuffers,
                                (void**)&g_real_swap);
-    ELOGI("initial eglSwapBuffers hook %s  real=%p",
-          ok ? "OK" : "pending", (void*)g_real_swap);
-
-    // Keep retrying on a background thread for late-loaded engine libs.
-    pthread_t th;
-    if (pthread_create(&th, nullptr, hook_worker, nullptr) == 0)
-        pthread_detach(th);
-
-    return true;
+    if (ok) ELOGI("eglSwapBuffers hook active  real=%p", (void*)g_real_swap);
+    return ok;
 }
 
 #endif // __ANDROID__

@@ -1,4 +1,8 @@
 build*/
-imgui/
 *.o
 *.a
+
+# Dear ImGui is now VENDORED in ./imgui (committed to the repo).
+# Only ignore its local git metadata if a clone was used.
+imgui/.git/
+imgui/.github/
