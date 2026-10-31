@@ -157,3 +157,16 @@ void axiom_toggle_menu() { g_menuOpen = !g_menuOpen; }
 void axiom_shutdown()    { AxiomLog("Axiom shutdown"); }
 
 } // extern "C"
+
+#ifdef __ANDROID__
+#include <jni.h>
+#include <android/log.h>
+
+// Runs automatically when Java calls System.loadLibrary("axiom_vr_mod").
+// Check with: adb logcat -s AxiomVR
+extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* /*vm*/, void* /*reserved*/) {
+    __android_log_print(ANDROID_LOG_INFO, "AxiomVR", "libaxiom_vr_mod.so loaded");
+    axiom_init();
+    return JNI_VERSION_1_6;
+}
+#endif
