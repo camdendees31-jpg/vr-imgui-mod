@@ -1,5 +1,5 @@
 // ============================================================
-//  Axiom VR Mod – Core library entry point
+//  Axiom VR Mod – Core module system + ImGui menu
 //  Builds to libaxiom_vr_mod.so (ARM64)
 //  [made by TagtusVR]
 // ============================================================
@@ -8,143 +8,151 @@
 #include "imgui.h"
 #include "imgui_internal.h"
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 #include <functional>
 #include <chrono>
 
-// ---- simple clock helper -------------------------------------------
-static float GetTime() {
+// ---- clock helper --------------------------------------------
+static float GetTimeSec() {
     using namespace std::chrono;
     static auto start = steady_clock::now();
     return duration<float>(steady_clock::now() - start).count();
 }
 
-// ---- module system -------------------------------------------------
+// ---- module system -------------------------------------------
 struct AxiomModule {
-    std::string  name;
-    bool         enabled = false;
-    std::function<void(float)> onDraw; // called every frame when enabled
+    std::string name;
+    bool        enabled = false;
+    std::function<void(float)> onDraw;
 };
 
 static std::vector<AxiomModule> g_modules;
 static bool   g_menuOpen  = true;
 static char   g_logBuf[4096] = {};
-static int    g_logOffset = 0;
+static size_t g_logLen = 0;
 
 static void AxiomLog(const char* msg) {
-    int written = snprintf(g_logBuf + g_logOffset,
-                           sizeof(g_logBuf) - g_logOffset, "[Axiom] %s\n", msg);
-    if (written > 0) g_logOffset += written;
-    if (g_logOffset >= (int)sizeof(g_logBuf) - 256) g_logOffset = 0;
+    size_t avail = sizeof(g_logBuf) - g_logLen;
+    if (avail < 64) { g_logLen = 0; avail = sizeof(g_logBuf); }
+    int written = snprintf(g_logBuf + g_logLen, avail, "[Axiom] %s\n", msg);
+    if (written > 0) g_logLen += (size_t)written;
 }
 
-// ---- public C API (for JNI / native bridge) -----------------------
+// ---- public C API --------------------------------------------
 extern "C" {
 
 void axiom_init() {
     g_modules.clear();
-    g_logOffset = 0;
+    g_logLen = 0;
+    memset(g_logBuf, 0, sizeof(g_logBuf));
 
-    // -- Register built-in VR mod modules --
-    g_modules.push_back({"Fly",   false, [](float t){
-        ImGui::Text("Fly speed:");
+    g_modules.push_back({"Fly", false, [](float) {
         static float speed = 5.0f;
-        ImGui::SliderFloat("##fly_speed", &speed, 1.0f, 50.0f);
+        ImGui::Text("Fly Speed"); ImGui::SameLine();
+        ImGui::SliderFloat("##fly", &speed, 1.f, 50.f);
     }});
 
-    g_modules.push_back({"NoClip", false, [](float t){
-        ImGui::Text("NoClip active – walk through walls");
+    g_modules.push_back({"NoClip", false, [](float) {
+        ImGui::TextUnformatted("NoClip – walk through walls");
     }});
 
-    g_modules.push_back({"Infinite Jump", false, [](float t){
-        static int jumps = 3;
-        ImGui::SliderInt("Extra Jumps", &jumps, 1, 10);
+    g_modules.push_back({"Infinite Jump", false, [](float) {
+        static int extra = 3;
+        ImGui::SliderInt("Extra Jumps", &extra, 1, 10);
     }});
 
-    g_modules.push_back({"Speed Hack", false, [](float t){
+    g_modules.push_back({"Speed Hack", false, [](float) {
         static float mult = 2.0f;
-        ImGui::SliderFloat("Speed Multiplier", &mult, 1.0f, 20.0f);
+        ImGui::SliderFloat("Multiplier", &mult, 1.f, 20.f);
     }});
 
-    g_modules.push_back({"ESP", false, [](float t){
+    g_modules.push_back({"ESP", false, [](float) {
         static bool players = true, items = false;
         ImGui::Checkbox("Players", &players);
         ImGui::SameLine();
         ImGui::Checkbox("Items", &items);
     }});
 
-    g_modules.push_back({"Auto-Farm", false, [](float t){
-        static float radius = 10.0f;
-        ImGui::SliderFloat("Farm Radius", &radius, 2.0f, 100.0f);
+    g_modules.push_back({"Auto-Farm", false, [](float) {
+        static float radius = 10.f;
+        ImGui::SliderFloat("Radius", &radius, 2.f, 100.f);
     }});
 
-    AxiomLog("Axiom VR Mod initialised");
+    AxiomLog("Axiom initialised");
 }
 
-// Call every frame from your rendering loop.
-// Returns true while the menu is open.
+// Called every frame by egl_hook.cpp's hooked_eglSwapBuffers.
+// Theme and NewFrame are handled by the hook; we just build the window.
 bool axiom_render_frame() {
-    float t = GetTime();
-
-    // Animate theme every frame
-    Axiom::ApplyTheme(t);
-
     if (!g_menuOpen) return false;
 
-    ImGuiIO& io = ImGui::GetIO();
-    ImGui::SetNextWindowSize(ImVec2(420, 560), ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos(ImVec2(40, 40),   ImGuiCond_FirstUseEver);
+    float t = GetTimeSec();
 
     ImGuiWindowFlags wflags =
-        ImGuiWindowFlags_NoTitleBar |
-        ImGuiWindowFlags_NoScrollbar;
+        ImGuiWindowFlags_NoTitleBar  |
+        ImGuiWindowFlags_NoScrollbar |
+        ImGuiWindowFlags_NoResize;
+
+    ImGuiIO& io = ImGui::GetIO();
+    // Position menu centre-top on the EGL surface
+    ImGui::SetNextWindowPos(
+        ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.04f),
+        ImGuiCond_Always, ImVec2(0.5f, 0.0f));
+    ImGui::SetNextWindowSize(
+        ImVec2(io.DisplaySize.x * 0.38f, io.DisplaySize.y * 0.55f),
+        ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.92f);
 
     if (!ImGui::Begin("##AxiomRoot", &g_menuOpen, wflags)) {
         ImGui::End();
         return g_menuOpen;
     }
 
-    // ---- Animated title bar ----
-    Axiom::GradientTitleBar("  Axiom VR Mod  [made by TagtusVR]", 32.0f, t);
+    // Animated gradient title bar
+    Axiom::GradientTitleBar("  Axiom VR Mod  [TagtusVR]", 28.f, t);
     ImGui::Separator();
 
-    // ---- Modules list ----
-    ImGui::BeginChild("##modules", ImVec2(0, 300), true);
+    // Module list
+    float listH = ImGui::GetContentRegionAvail().y - 100.f;
+    ImGui::BeginChild("##mods", ImVec2(0, listH), true);
     for (auto& mod : g_modules) {
         ImVec4 accent = Axiom::GradientColor(t);
+        ImGui::PushID(mod.name.c_str());
+
         if (mod.enabled) ImGui::PushStyleColor(ImGuiCol_Text, accent);
-
-        bool toggled = ImGui::CollapsingHeader(mod.name.c_str());
-
+        bool open = ImGui::CollapsingHeader(mod.name.c_str());
         if (mod.enabled) ImGui::PopStyleColor();
 
-        // toggle on double-click header or checkbox
-        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 20);
-        ImGui::PushID(mod.name.c_str());
+        float w = ImGui::GetContentRegionAvail().x;
+        ImGui::SameLine(w - ImGui::GetFrameHeight());
         ImGui::Checkbox("##en", &mod.enabled);
-        ImGui::PopID();
 
-        if (toggled && mod.enabled && mod.onDraw) {
-            ImGui::Indent();
+        if (open && mod.enabled && mod.onDraw) {
+            ImGui::Indent(12.f);
             mod.onDraw(t);
-            ImGui::Unindent();
+            ImGui::Unindent(12.f);
         }
+        ImGui::PopID();
     }
     ImGui::EndChild();
 
     ImGui::Separator();
 
-    // ---- Log window ----
-    ImGui::BeginChild("##log", ImVec2(0, 120), true);
+    // Log
+    ImGui::BeginChild("##log", ImVec2(0, 55.f), true);
     ImGui::TextUnformatted(g_logBuf);
-    ImGui::SetScrollHereY(1.0f);
+    ImGui::SetScrollHereY(1.f);
     ImGui::EndChild();
 
-    ImGui::Separator();
-    if (ImGui::Button("Close Menu")) g_menuOpen = false;
+    // Buttons
+    ImVec4 accent = Axiom::GradientColor(t);
+    ImGui::PushStyleColor(ImGuiCol_Button, accent);
+    if (ImGui::Button("Close", ImVec2(80, 0))) g_menuOpen = false;
+    ImGui::PopStyleColor();
     ImGui::SameLine();
-    if (ImGui::Button("Reset All")) {
+    if (ImGui::Button("Reset All", ImVec2(90, 0))) {
         for (auto& m : g_modules) m.enabled = false;
         AxiomLog("All modules disabled");
     }
@@ -158,15 +166,33 @@ void axiom_shutdown()    { AxiomLog("Axiom shutdown"); }
 
 } // extern "C"
 
+// ================================================================
+//  Android / JNI entry points
+// ================================================================
 #ifdef __ANDROID__
 #include <jni.h>
 #include <android/log.h>
 
-// Runs automatically when Java calls System.loadLibrary("axiom_vr_mod").
-// Check with: adb logcat -s AxiomVR
+// Declared in egl_hook.cpp
+extern "C" bool install_egl_hook();
+
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* /*vm*/, void* /*reserved*/) {
-    __android_log_print(ANDROID_LOG_INFO, "AxiomVR", "libaxiom_vr_mod.so loaded");
+    __android_log_print(ANDROID_LOG_INFO, "AxiomVR",
+                        "libaxiom_vr_mod.so loaded – installing hooks");
     axiom_init();
+    bool ok = install_egl_hook();
+    __android_log_print(ANDROID_LOG_INFO, "AxiomVR",
+                        "EGL hook %s", ok ? "OK – menu will render" : "FAILED");
     return JNI_VERSION_1_6;
 }
-#endif
+
+// JNI helpers callable from Java/Kotlin (optional)
+extern "C" JNIEXPORT void JNICALL
+Java_com_axiom_vr_AxiomLib_toggleMenu(JNIEnv*, jclass) {
+    axiom_toggle_menu();
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_axiom_vr_AxiomLib_shutdown(JNIEnv*, jclass) {
+    axiom_shutdown();
+}
+#endif // __ANDROID__

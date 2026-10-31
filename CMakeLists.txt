@@ -1,11 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
-project(axiom_vr_mod VERSION 1.0.0 LANGUAGES CXX)
+project(axiom_vr_mod VERSION 1.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ---------------------------------------------------------------
-# ImGui sources (fetched into ./imgui/ — CI clones v1.90.4)
+# Dear ImGui (fetched by CI / developer into ./imgui/)
 # ---------------------------------------------------------------
 set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/imgui)
 
@@ -18,29 +18,50 @@ set(IMGUI_SOURCES
 )
 
 # ---------------------------------------------------------------
-# Axiom shared library  (libaxiom_vr_mod.so)
+# Axiom shared library  →  libaxiom_vr_mod.so
 # ---------------------------------------------------------------
 add_library(axiom_vr_mod SHARED
     src/axiom_mod.cpp
+    src/hook.cpp
+    src/egl_hook.cpp
     ${IMGUI_SOURCES}
 )
 
 target_include_directories(axiom_vr_mod PUBLIC
     ${CMAKE_SOURCE_DIR}/include
     ${IMGUI_DIR}
+    ${IMGUI_DIR}/backends
 )
 
-target_compile_options(axiom_vr_mod PRIVATE -Wall -Wextra -O2)
+# GLES3 backend for ImGui (used by egl_hook.cpp)
+target_sources(axiom_vr_mod PRIVATE
+    ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
+)
 
-# ARM64 flags (applied when cross-compiling with android-cmake toolchain)
+target_compile_definitions(axiom_vr_mod PRIVATE
+    IMGUI_IMPL_OPENGL_ES3
+    GL_GLEXT_PROTOTYPES
+)
+
+target_compile_options(axiom_vr_mod PRIVATE -Wall -Wextra -O2 -fvisibility=hidden)
+
+# Android / Quest
 if(ANDROID)
     target_compile_options(axiom_vr_mod PRIVATE -march=armv8-a)
-    find_library(log-lib log)
-    target_link_libraries(axiom_vr_mod ${log-lib} android)
+    find_library(log-lib    log)
+    find_library(android-lib android)
+    find_library(egl-lib    EGL)
+    find_library(gles3-lib  GLESv3)
+    target_link_libraries(axiom_vr_mod
+        ${log-lib}
+        ${android-lib}
+        ${egl-lib}
+        ${gles3-lib}
+    )
 endif()
 
 # ---------------------------------------------------------------
-# Desktop example  (skipped on Android)
+# Desktop preview  (Linux, skip on Android)
 # ---------------------------------------------------------------
 if(NOT ANDROID)
     find_package(OpenGL REQUIRED)
@@ -64,9 +85,7 @@ if(NOT ANDROID)
 endif()
 
 # ---------------------------------------------------------------
-# Install rules
+# Install
 # ---------------------------------------------------------------
-install(TARGETS axiom_vr_mod
-        LIBRARY DESTINATION lib
-        ARCHIVE DESTINATION lib)
+install(TARGETS axiom_vr_mod LIBRARY DESTINATION lib ARCHIVE DESTINATION lib)
 install(DIRECTORY include/ DESTINATION include/axiom)
