@@ -68,8 +68,12 @@ if(NOT ANDROID)
     find_package(glfw3 3.3 QUIET)
 
     if(glfw3_FOUND)
+        # Self-contained preview: compile the core + ImGui directly so
+        # it does not depend on the hidden-visibility .so symbols.
         add_executable(axiom_example
             example/main_example.cpp
+            src/axiom_mod.cpp
+            ${IMGUI_SOURCES}
             ${IMGUI_DIR}/backends/imgui_impl_glfw.cpp
             ${IMGUI_DIR}/backends/imgui_impl_opengl3.cpp
         )
@@ -78,7 +82,7 @@ if(NOT ANDROID)
             ${IMGUI_DIR}
             ${IMGUI_DIR}/backends
         )
-        target_link_libraries(axiom_example axiom_vr_mod glfw OpenGL::GL)
+        target_link_libraries(axiom_example glfw OpenGL::GL)
     else()
         message(STATUS "GLFW not found – skipping desktop example build")
     endif()
