@@ -12,11 +12,8 @@ jobs:
     name: Android ARM64 (.so)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout repo (Dear ImGui is vendored in ./imgui)
         uses: actions/checkout@v4
-
-      - name: Fetch Dear ImGui v1.90.4
-        run: git clone --depth 1 --branch v1.90.4 https://github.com/ocornut/imgui.git imgui
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -53,11 +50,8 @@ jobs:
     name: Linux Desktop (smoke test)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout repo (Dear ImGui is vendored in ./imgui)
         uses: actions/checkout@v4
-
-      - name: Fetch Dear ImGui v1.90.4
-        run: git clone --depth 1 --branch v1.90.4 https://github.com/ocornut/imgui.git imgui
 
       - name: Install dependencies
         run: |
