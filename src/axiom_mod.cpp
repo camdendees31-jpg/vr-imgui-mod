@@ -111,7 +111,7 @@ bool axiom_render_frame() {
     }
 
     // Animated gradient title bar
-    Axiom::GradientTitleBar("  Axiom VR Mod  [TagtusVR]", 28.f, t);
+    Axiom::GradientTitleBar("  Axiom  |  OmnyMods LethalApe  [TagtusVR]", 28.f, t);
     ImGui::Separator();
 
     // Module list
@@ -201,8 +201,28 @@ static void* axiom_hook_worker(void*) {
     return nullptr;
 }
 
+// Target game
+#define AXIOM_TARGET_PKG "com.GrahamDev677.OmnyModsLethalApe1"
+
+static bool axiom_verify_package() {
+    // Read /proc/self/cmdline — on Android this is the package name
+    char buf[256] = {};
+    FILE* f = fopen("/proc/self/cmdline", "r");
+    if (!f) { AVLOG("WARNING: cannot read /proc/self/cmdline"); return true; /* run anyway */ }
+    fread(buf, 1, sizeof(buf) - 1, f);
+    fclose(f);
+    AVLOG("process cmdline: %s", buf);
+    if (strstr(buf, AXIOM_TARGET_PKG)) {
+        AVLOG("✓ target package matched: " AXIOM_TARGET_PKG);
+        return true;
+    }
+    AVLOG("⚠ package mismatch (expected " AXIOM_TARGET_PKG ") – hooks will still run (universal mode)");
+    return true; // still run — useful for testing on other apps
+}
+
 extern "C" JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* /*vm*/, void* /*reserved*/) {
-    AVLOG("libaxiom_vr_mod.so loaded – installing GLES + Vulkan + OpenXR hooks");
+    AVLOG("libaxiom_vr_mod.so loaded – target: " AXIOM_TARGET_PKG);
+    axiom_verify_package();
     axiom_init();
 
     pthread_t th;
